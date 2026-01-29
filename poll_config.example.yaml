@@ -1,0 +1,14 @@
+polls:
+  - number: 0
+    id: "example_poll"
+    question: "How did you like today's game?"
+    options:
+      - "Loved it"
+      - "It was ok"
+      - "Could be better"
+      - "Show results"
+    type: "regular"
+    correct_option_id: null
+    explanation: null
+    is_anonymous: false
+    allows_multiple_answers: false
