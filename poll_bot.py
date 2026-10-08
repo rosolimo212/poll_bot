@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import asyncio
 import logging
 import yaml
 import html
@@ -9,8 +10,8 @@ import re
 from typing import Dict, Any, List, Tuple
 
 from aiogram import Bot, Dispatcher, types
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.utils import executor
+from aiogram.filters import Command, CommandObject
+from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import PollAnswer
 
 # Configure logging
@@ -32,7 +33,7 @@ class PollBot:
         self.poll_config = self.load_config(poll_config_path)
         self.bot = Bot(token=self.secrets_config['telegram_bot']['token'])
         self.storage = MemoryStorage()
-        self.dp = Dispatcher(self.bot, storage=self.storage)
+        self.dp = Dispatcher(storage=self.storage)
         self.polls = self.poll_config.get('polls', [])
         
         # Create polls dictionary for quick lookup by number
@@ -58,7 +59,7 @@ class PollBot:
     def register_handlers(self):
         """Register all bot handlers."""
         
-        @self.dp.message_handler(commands=['start'])
+        @self.dp.message(Command("start"))
         async def start_command(message: types.Message):
             """Handle /start command."""
             welcome_text = (
@@ -76,7 +77,7 @@ class PollBot:
             )
             await message.answer(welcome_text)
         
-        @self.dp.message_handler(commands=['help'])
+        @self.dp.message(Command("help"))
         async def help_command(message: types.Message):
             """Handle /help command."""
             help_text = (
@@ -96,7 +97,7 @@ class PollBot:
             )
             await message.answer(help_text)
         
-        @self.dp.message_handler(commands=['list_polls'])
+        @self.dp.message(Command("list_polls"))
         async def list_polls_command(message: types.Message):
             """List all available polls with their numbers."""
             if not self.polls:
@@ -117,11 +118,11 @@ class PollBot:
             
             await message.answer(poll_list)
         
-        @self.dp.message_handler(commands=['make_poll'])
-        async def make_poll_command(message: types.Message):
+        @self.dp.message(Command("make_poll"))
+        async def make_poll_command(message: types.Message, command: CommandObject):
             """Create a poll by number."""
             # Check if command has arguments
-            if not message.get_args():
+            if not command.args:
                 await message.answer(
                     "❌ Usage: /make_poll [poll_number]\n\n"
                     "Example: /make_poll 0\n\n"
@@ -129,7 +130,7 @@ class PollBot:
                 )
                 return
             
-            poll_number_raw = message.get_args().strip()
+            poll_number_raw = command.args.strip()
             if not poll_number_raw.isdigit():
                 await message.answer(
                     "❌ Poll number must be a non-negative integer.\n\n"
@@ -176,11 +177,11 @@ class PollBot:
                 )
         
         
-        @self.dp.message_handler(commands=['choice'])
-        async def choice_command(message: types.Message):
+        @self.dp.message(Command("choice"))
+        async def choice_command(message: types.Message, command: CommandObject):
             """Randomly choose from a list of names."""
             # Check if command has arguments
-            if not message.get_args():
+            if not command.args:
                 await message.answer(
                     "❌ Usage: /choice [names separated by commas]\n\n"
                     "Example: /choice John, Bob, Juan, Roman\n\n"
@@ -188,7 +189,7 @@ class PollBot:
                 )
                 return
             
-            names_input = message.get_args().strip()
+            names_input = command.args.strip()
             
             try:
                 # Split names by comma and clean them
@@ -224,7 +225,7 @@ class PollBot:
                     "Example: /choice John, Bob, Juan, Roman"
                 )
         
-        @self.dp.message_handler(commands=['question'])
+        @self.dp.message(Command("question"))
         async def question_command(message: types.Message):
             """Send a random question from the local pack file."""
             try:
@@ -254,10 +255,11 @@ class PollBot:
                 for chunk in self.split_message_chunks(question_text):
                     await message.answer(self.escape_html(chunk), parse_mode='HTML')
         
-        @self.dp.poll_answer_handler()
+        @self.dp.poll_answer()
         async def handle_poll_answer(poll_answer: PollAnswer):
             """Handle poll answers (optional - for analytics)."""
-            logger.info(f"Poll answer received: User {poll_answer.user.id} answered poll {poll_answer.poll_id}")
+            user_id = poll_answer.user.id if poll_answer.user else "anonymous"
+            logger.info(f"Poll answer received: User {user_id} answered poll {poll_answer.poll_id}")
     
     def escape_markdown(self, text: str) -> str:
         """Escape special characters that might cause Markdown parsing issues."""
@@ -393,15 +395,15 @@ class PollBot:
         logger.info(f"Poll created in chat {chat_id}: {question} (anonymous: {is_anonymous}, multiple: {allows_multiple_answers})")
         return poll_message
     
-    def run(self):
+    async def run(self):
         """Start the bot."""
         logger.info("Starting Group Poll Bot...")
-        executor.start_polling(self.dp, skip_updates=True)
+        await self.dp.start_polling(self.bot)
 
 if __name__ == '__main__':
     try:
         bot = PollBot()
-        bot.run()
+        asyncio.run(bot.run())
     except Exception as e:
         logger.error(f"Failed to start bot: {e}")
         raise
